@@ -148,7 +148,6 @@ DSIMS-distributed-student-issue-management/
 ├── README.md
 └── LICENSE
 
----
 
 ##  Future Enhancements
 - Advanced analytics dashboards
