@@ -1,13 +1,13 @@
 # Distributed Student Issue Management System (DSIMS)
 
-## 📌 Project Overview
+##  Project Overview
 The Distributed Student Issue Management System (DSIMS) is a web-based application designed to allow university students to report, track, and manage academic, administrative, and infrastructure-related issues in a structured and transparent manner. The system addresses the lack of a formal issue reporting mechanism in universities by providing a centralized, scalable, and fault-tolerant solution.
 
 The system is built using a distributed NoSQL database (MongoDB) and is deployed on the Microsoft Azure cloud platform to ensure scalability, high availability, and reliability. This project is developed as part of the **Advanced Database Management Systems** course and focuses on applying real-world distributed database concepts in an academic environment.
 
----
 
-## 🎯 Objectives
+
+##  Objectives
 - Provide a centralized platform for students to submit and track issues
 - Improve transparency in issue handling and resolution
 - Enable department administrators to manage complaints efficiently
@@ -15,9 +15,9 @@ The system is built using a distributed NoSQL database (MongoDB) and is deployed
 - Demonstrate distributed database concepts such as replication and sharding
 - Ensure scalability, performance optimization, and fault tolerance
 
----
 
-## 🏗️ System Architecture
+
+##  System Architecture
 The system follows a **layered architecture**:
 
 - **Client Layer**  
@@ -29,36 +29,34 @@ The system follows a **layered architecture**:
 - **Database Layer**  
   Distributed MongoDB database implemented using replication and sharding to support scalability and availability.
 
----
 
-## 🗄️ Database Technology
+
+##  Database Technology
 - **MongoDB** (Document-Oriented NoSQL Database)
 - Supports semi-structured data and flexible schema design
 - Provides built-in replication and sharding
 - Efficiently handles concurrent access and large datasets
 - Ideal for issue records containing dynamic fields such as updates and attachments
 
----
 
-## ☁️ Cloud Deployment
+##  Cloud Deployment
 - **Microsoft Azure** is used to host the backend application using Azure App Service.
 - **MongoDB Atlas (Azure Region)** is used for cloud-based distributed database deployment.
 - Provides automatic backups, monitoring, and failover support.
 
----
 
-## 🧱 Distributed Database Concepts Implemented
+##  Distributed Database Concepts Implemented
 
-### ✅ Replication
+###  Replication
 - MongoDB replica sets are used to maintain multiple copies of data.
 - Ensures high availability and automatic failover in case of node failure.
 
-### ✅ Sharding
+###  Sharding
 - Data is horizontally partitioned across shards to improve scalability.
 - Shard key strategy is designed using department-based and time-based attributes.
 - Helps distribute load efficiently and avoid performance bottlenecks.
 
-### ✅ Indexing & Performance Optimization
+###  Indexing & Performance Optimization
 Indexes are applied on frequently queried fields including:
 - issue_id
 - student_id
@@ -69,9 +67,8 @@ Indexes are applied on frequently queried fields including:
 
 This improves query performance and supports efficient reporting and analytics.
 
----
 
-## ⚙️ Technology Stack
+##  Technology Stack
 
 ### Backend
 - Node.js
@@ -93,9 +90,8 @@ This improves query performance and supports efficient reporting and analytics.
 - Microsoft Azure (Backend Hosting)
 - MongoDB Atlas (Azure Region)
 
----
 
-## 🔐 Security & Access Control
+##  Security & Access Control
 - Role-Based Access Control (RBAC)
   - Student
   - Department Administrator
@@ -104,26 +100,23 @@ This improves query performance and supports efficient reporting and analytics.
 - Secure password hashing
 - Audit logging for critical operations
 
----
 
-## 🚀 Key Features
+##  Key Features
 - Issue submission and tracking
 - Department-wise complaint routing
 - Issue lifecycle and status history
 - Notification system for updates
 - Analytical reports and dashboards for management
 
----
 
-## 🧪 Testing Strategy
+##  Testing Strategy
 - API testing using Postman
 - Schema validation testing
 - Query and aggregation verification
 - Conceptual concurrent access testing
 
----
 
-## 📁 Project Structure
+##  Project Structure
 DSIMS-distributed-student-issue-management/
 │
 ├── docs/                          # Technical and academic documentation
@@ -157,29 +150,26 @@ DSIMS-distributed-student-issue-management/
 
 ---
 
-## 📈 Future Enhancements
+##  Future Enhancements
 - Advanced analytics dashboards
 - Email and push notifications
 - Mobile application support
 - Load testing and auto-scaling
 - Integration with university ERP systems
 
----
 
-## ✅ Project Status
-🟡 **In Progress**
+##  Project Status
+ **In Progress**
 
 Current Phase:
 - Database implementation
 - Backend API development
 
----
 
-## 👥 Contributors
+##  Contributors
 - **Muhammad Yasir** (NUM-BSCS-2023-37)
 - **Muhammad Raza** (NUM-BSCS-2023-28)
 
----
 
-## 📜 License
+##  License
 This project is licensed under the MIT License.
