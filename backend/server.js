@@ -20,5 +20,6 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
 
-
+const authRoutes = require("./routes/auth.routes");
+app.use("/auth", authRoutes);
 
