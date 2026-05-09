@@ -24,6 +24,11 @@ const studentSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    campus_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Campus",
+      required: true,
+    },
     department_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Department",
@@ -46,17 +51,30 @@ const studentSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      default: "active",
-      enum: ["active", "inactive"],
+      enum: ["pending", "active", "suspended"],
+      default: "pending",
+    },
+    is_email_verified: {
+      type: Boolean,
+      default: false,
+    },
+    verification_token: {
+      type: String,
+      default: null,
+    },
+    verification_token_expires: {
+      type: Date,
+      default: null,
     },
     created_at: {
       type: Date,
       default: Date.now,
     },
   },
-  {
-    timestamps: false,
-  }
+  { timestamps: false }
 );
+
+// Index for login + queries
+studentSchema.index({ campus_id: 1, department_id: 1 });
 
 module.exports = mongoose.model("Student", studentSchema);

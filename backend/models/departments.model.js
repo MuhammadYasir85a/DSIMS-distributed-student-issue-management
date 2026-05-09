@@ -23,14 +23,20 @@ const departmentSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    campus_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Campus",
+      required: true, // Enterprise multi-campus support
+    },
     created_at: {
       type: Date,
       default: Date.now,
     },
   },
-  {
-    timestamps: false,
-  }
+  { timestamps: false }
 );
+
+// Index for department-based queries
+departmentSchema.index({ campus_id: 1 });
 
 module.exports = mongoose.model("Department", departmentSchema);

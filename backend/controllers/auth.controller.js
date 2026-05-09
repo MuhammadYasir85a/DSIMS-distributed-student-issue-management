@@ -9,13 +9,31 @@ const Admin = require("../models/admins.model");
 ============================== */
 const registerStudent = async (req, res) => {
   try {
-    const { student_id, name, email, password, department_id, semester, contact_no } = req.body;
+    const { student_id, name, email, password, campus_id, department_id, semester, contact_no } = req.body;
 
-    // ✅ Allow only institutional email
+    // ✅ 1. Allow only institutional email
     if (!email.endsWith("@namal.edu.pk")) {
       return res.status(400).json({ message: "Only @namal.edu.pk email allowed." });
     }
 
+    // ✅ 2. Check campus exists
+    const campus = await Campus.findById(campus_id);
+    if (!campus) {
+      return res.status(400).json({ message: "Invalid campus selected." });
+    }
+
+    // ✅ 3. Check department exists
+    const department = await Department.findById(department_id);
+    if (!department) {
+      return res.status(400).json({ message: "Invalid department selected." });
+    }
+
+    // ✅ 4. Ensure department belongs to campus
+    if (department.campus_id.toString() !== campus_id) {
+      return res.status(400).json({ message: "Department does not belong to selected campus." });
+    }
+
+    // ✅ 5. Check existing email
     const existing = await Student.findOne({ email });
     if (existing) {
       return res.status(400).json({ message: "Email already registered." });
@@ -31,6 +49,7 @@ const registerStudent = async (req, res) => {
       name,
       email,
       password_hash,
+      campus_id,
       department_id,
       semester,
       contact_no,
@@ -93,7 +112,7 @@ const loginUser = async (req, res) => {
     let user;
     let role;
 
-    // ✅ Check Student
+    // Check Student
     user = await Student.findOne({ email });
     if (user) {
       role = "student";
@@ -107,7 +126,7 @@ const loginUser = async (req, res) => {
       }
 
     } else {
-      // ✅ Check Admin
+      //  Check Admin
       user = await Admin.findOne({ email });
       if (!user) {
         return res.status(400).json({ message: "Invalid credentials." });
@@ -125,6 +144,8 @@ const loginUser = async (req, res) => {
       {
         user_id: user._id,
         role: role,
+        campus_id: user.campus_id,
+        department_id: user.department_id || null,
       },
       process.env.JWT_SECRET,
       { expiresIn: "1h" }

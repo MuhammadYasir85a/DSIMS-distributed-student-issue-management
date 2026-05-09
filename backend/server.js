@@ -7,6 +7,9 @@ const app = express();
 // Connect Database
 connectDB();
 
+// ✅ VERY IMPORTANT LINE
+app.use(express.json());
+
 // Middleware
 app.use(express.json());
 
@@ -22,4 +25,15 @@ app.listen(PORT, () => {
 
 const authRoutes = require("./routes/auth.routes");
 app.use("/auth", authRoutes);
+
+const issueRoutes = require("./routes/issues.routes");
+app.use("/issues", issueRoutes);
+
+
+const campusRoutes = require("./routes/campus.routes");
+const departmentRoutes = require("./routes/department.routes");
+
+app.use("/campuses", campusRoutes);
+app.use("/departments", departmentRoutes);
+
 

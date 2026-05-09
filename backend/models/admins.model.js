@@ -23,24 +23,30 @@ const adminSchema = new mongoose.Schema(
       required: true,
       enum: ["department_admin", "management", "super_admin"],
     },
+    campus_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Campus",
+      required: true,
+    },
     department_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Department",
-      required: false, // nullable
+      required: false, // nullable for management/super_admin
     },
     status: {
       type: String,
-      default: "active",
       enum: ["active", "inactive"],
+      default: "active",
     },
     created_at: {
       type: Date,
       default: Date.now,
     },
   },
-  {
-    timestamps: false,
-  }
+  { timestamps: false }
 );
+
+
+adminSchema.index({ campus_id: 1 });
 
 module.exports = mongoose.model("Admin", adminSchema);
