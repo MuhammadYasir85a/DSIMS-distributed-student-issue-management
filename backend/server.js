@@ -33,6 +33,13 @@ app.use("/issues", issueRoutes);
 const campusRoutes = require("./routes/campus.routes");
 const departmentRoutes = require("./routes/department.routes");
 
+const reportRoutes = require("./routes/report.routes");
+app.use("/reports", reportRoutes);
+
+
+const adminRoutes = require("./routes/admin.routes");
+app.use("/admin", adminRoutes);
+
 app.use("/campuses", campusRoutes);
 app.use("/departments", departmentRoutes);
 

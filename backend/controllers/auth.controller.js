@@ -1,8 +1,11 @@
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
+
 const Student = require("../models/students.model");
 const Admin = require("../models/admins.model");
+const Campus = require("../models/campuses.model");
+const Department = require("../models/departments.model");
 
 /* ==============================
    REGISTER STUDENT
@@ -11,29 +14,31 @@ const registerStudent = async (req, res) => {
   try {
     const { student_id, name, email, password, campus_id, department_id, semester, contact_no } = req.body;
 
-    // ✅ 1. Allow only institutional email
-    if (!email.endsWith("@namal.edu.pk")) {
-      return res.status(400).json({ message: "Only @namal.edu.pk email allowed." });
+    // ✅ Strict student email format
+    const studentEmailRegex = /^[a-z]{4}\d{2}[abcd]\d{3}@namal\.edu\.pk$/;
+    if (!studentEmailRegex.test(email)) {
+      return res.status(400).json({
+        message: "Invalid student email format. Example: bscs23a123@namal.edu.pk"
+      });
     }
 
-    // ✅ 2. Check campus exists
+    // ✅ Campus validation
     const campus = await Campus.findById(campus_id);
     if (!campus) {
       return res.status(400).json({ message: "Invalid campus selected." });
     }
 
-    // ✅ 3. Check department exists
+    // ✅ Department validation
     const department = await Department.findById(department_id);
     if (!department) {
       return res.status(400).json({ message: "Invalid department selected." });
     }
 
-    // ✅ 4. Ensure department belongs to campus
     if (department.campus_id.toString() !== campus_id) {
       return res.status(400).json({ message: "Department does not belong to selected campus." });
     }
 
-    // ✅ 5. Check existing email
+    // ✅ Duplicate check
     const existing = await Student.findOne({ email });
     if (existing) {
       return res.status(400).json({ message: "Email already registered." });
@@ -65,7 +70,7 @@ const registerStudent = async (req, res) => {
     console.log("============================\n");
 
     res.status(201).json({
-      message: "Registration successful. Please verify your email.",
+      message: "Registration successful. Verify email and wait for admin approval."
     });
 
   } catch (error) {
@@ -103,7 +108,7 @@ const verifyEmail = async (req, res) => {
 };
 
 /* ==============================
-   LOGIN (Unified: Student + Admin)
+   LOGIN
 ============================== */
 const loginUser = async (req, res) => {
   try {
@@ -112,40 +117,36 @@ const loginUser = async (req, res) => {
     let user;
     let role;
 
-    // Check Student
     user = await Student.findOne({ email });
+
     if (user) {
       role = "student";
 
-      if (!user.is_email_verified) {
+      if (!user.is_email_verified)
         return res.status(403).json({ message: "Email not verified." });
-      }
 
-      if (user.status !== "active") {
-        return res.status(403).json({ message: "Account not approved by admin." });
-      }
+      if (user.status !== "active")
+        return res.status(403).json({ message: "Awaiting admin approval." });
 
     } else {
-      //  Check Admin
       user = await Admin.findOne({ email });
-      if (!user) {
+
+      if (!user)
         return res.status(400).json({ message: "Invalid credentials." });
-      }
 
       role = user.role;
     }
 
     const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) {
+    if (!isMatch)
       return res.status(400).json({ message: "Invalid credentials." });
-    }
 
     const token = jwt.sign(
       {
         user_id: user._id,
-        role: role,
+        role,
         campus_id: user.campus_id,
-        department_id: user.department_id || null,
+        department_id: user.department_id || null
       },
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
@@ -162,8 +163,4 @@ const loginUser = async (req, res) => {
   }
 };
 
-module.exports = {
-  registerStudent,
-  verifyEmail,
-  loginUser
-};
+module.exports = { registerStudent, verifyEmail, loginUser };
