@@ -10,7 +10,7 @@ const updateSchema = new mongoose.Schema(
     },
     updater_role: {
       type: String,
-      enum: ["department_admin", "management", "super_admin"],
+      enum: ["student","department_admin", "management", "super_admin"],
       required: true,
     },
     message: { type: String, required: true },
@@ -34,7 +34,26 @@ const issueSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
     description: { type: String, required: true },
-    category: { type: String, required: true },
+    primary_category: {
+  type: String,
+  required: true,
+  enum: [
+    "campus_facility",
+    "faculty_issue",
+    "hostel_issue",
+    "electricity",
+    "internet",
+    "administration",
+    "examination",
+    "transport"
+  ]
+},
+
+subcategory: {
+  type: String,
+  required: true,
+  trim: true
+},
     priority: {
       type: String,
       enum: ["low", "medium", "high", "urgent"],
@@ -85,5 +104,7 @@ issueSchema.index({ campus_id: 1 });
 issueSchema.index({ department_id: 1, status: 1 });
 issueSchema.index({ student_id: 1 });
 issueSchema.index({ createdAt: -1 });
+issueSchema.index({ campus_id: 1, primary_category: 1 });
+issueSchema.index({ primary_category: 1, subcategory: 1 });
 
 module.exports = mongoose.model("Issue", issueSchema);

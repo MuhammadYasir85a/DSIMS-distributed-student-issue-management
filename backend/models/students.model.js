@@ -24,6 +24,17 @@ const studentSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+
+    reset_password_token: {
+  type: String,
+  default: null,
+},
+
+reset_password_expires: {
+  type: Date,
+  default: null,
+   },
+   
     campus_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Campus",

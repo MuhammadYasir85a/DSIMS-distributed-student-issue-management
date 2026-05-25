@@ -1,27 +1,55 @@
 require("dotenv").config();
 const mongoose = require("mongoose");
-const { faker } = require("@faker-js/faker");
 const bcrypt = require("bcrypt");
+const { faker } = require("@faker-js/faker");
 
 const connectDB = require("./config/db");
 const Campus = require("./models/campuses.model");
 const Department = require("./models/departments.model");
 const Student = require("./models/students.model");
 const Issue = require("./models/issues.model");
+const Admin = require("./models/admins.model");
 
-const CAMPUSES_COUNT = 4;
+const CAMPUSES = [
+  "Islamabad Campus",
+  "Lahore Campus",
+  "Karachi Campus",
+  "Peshawar Campus",
+  "Quetta Campus",
+  "Multan Campus"
+];
+
 const DEPARTMENTS_PER_CAMPUS = 20;
 const TOTAL_STUDENTS = 50000;
-const TOTAL_ISSUES = 100000;
+const TOTAL_ISSUES = 70000;
 
-const generateStudentEmail = (i, campusIndex) => {
+const pakFirstNames = [
+  "Ali","Ahmed","Hassan","Usman","Bilal","Hamza",
+  "Zain","Saad","Abdullah","Umar",
+  "Ayesha","Fatima","Zara","Hira","Maryam","Sana","Noor","Iqra"
+];
+
+const pakLastNames = [
+  "Khan","Ahmed","Malik","Chaudhry","Butt",
+  "Raza","Sheikh","Qureshi","Siddiqui","Farooq"
+];
+
+const issueCategories = [
+  { primary: "electricity", subs: ["fan","switch","generator","wiring"] },
+  { primary: "internet", subs: ["wifi","portal","ethernet"] },
+  { primary: "hostel_issue", subs: ["water","room","cleaning"] },
+  { primary: "campus_facility", subs: ["projector","ac","furniture"] },
+  { primary: "faculty_issue", subs: ["grading","attendance","behavior"] }
+];
+
+const generateStudentEmail = (i) => {
   const year = 20 + (i % 5);
-  const section = ["a", "b", "c", "d"][i % 4];
+  const section = ["a","b","c","d"][i % 4];
   const roll = (100 + i).toString().padStart(3, "0");
   return `bscs${year}${section}${roll}@namal.edu.pk`;
 };
 
-const seedEnterpriseData = async () => {
+const seedEnterprise = async () => {
   try {
     await connectDB();
 
@@ -30,14 +58,15 @@ const seedEnterpriseData = async () => {
     await Student.deleteMany();
     await Department.deleteMany();
     await Campus.deleteMany();
+    await Admin.deleteMany();
 
     console.log("✅ Creating campuses...");
     const campuses = [];
 
-    for (let i = 0; i < CAMPUSES_COUNT; i++) {
+    for (let name of CAMPUSES) {
       const campus = await Campus.create({
-        name: `Campus_${i + 1}`,
-        location: faker.location.city()
+        name,
+        location: name.split(" ")[0]
       });
       campuses.push(campus);
     }
@@ -45,42 +74,83 @@ const seedEnterpriseData = async () => {
     console.log("✅ Creating departments...");
     const departments = [];
 
-    for (let c = 0; c < CAMPUSES_COUNT; c++) {
-      for (let d = 0; d < DEPARTMENTS_PER_CAMPUS; d++) {
+    for (let c = 0; c < campuses.length; c++) {
+      const campus = campuses[c];
+
+      for (let i = 0; i < DEPARTMENTS_PER_CAMPUS; i++) {
         const dept = await Department.create({
-          name: `Dept_${c}_${d}`,
+          name: `Department_${c}_${i}`,
           type: "academic",
-          email: `dept${c}_${d}@namal.edu.pk`,
-          office_location: `Block ${d}`,
-          campus_id: campuses[c]._id
+          email: `dept${c}_${i}@namal.edu.pk`,  // ✅ UNIQUE
+          office_location: `Block ${i}`,
+          campus_id: campus._id
         });
+
         departments.push(dept);
       }
     }
 
-    console.log("✅ Creating 50,000 students distributed across campuses...");
+    console.log("✅ Creating admins...");
+    const adminPassword = await bcrypt.hash("admin123", 10);
+
+    for (let dept of departments) {
+      await Admin.create({
+        name: `Admin_${dept.name}`,
+        email: `admin.${dept.name.toLowerCase()}@namal.edu.pk`,
+        password_hash: adminPassword,
+        role: "department_admin",
+        campus_id: dept.campus_id,
+        department_id: dept._id,
+        status: "active"
+      });
+    }
+
+    await Admin.create({
+      name: "Management Admin",
+      email: "management@namal.edu.pk",
+      password_hash: adminPassword,
+      role: "management",
+      campus_id: campuses[0]._id,
+      department_id: null,
+      status: "active"
+    });
+
+    await Admin.create({
+      name: "Super Admin",
+      email: "superadmin@namal.edu.pk",
+      password_hash: adminPassword,
+      role: "super_admin",
+      campus_id: campuses[0]._id,
+      department_id: null,
+      status: "active"
+    });
+
+    console.log("✅ Creating students...");
     const students = [];
-    const hashedPassword = await bcrypt.hash("student123", 10);
+    const studentPassword = await bcrypt.hash("student123", 10);
 
     for (let i = 0; i < TOTAL_STUDENTS; i++) {
-      const campusIndex = i % CAMPUSES_COUNT;
-      const campus = campuses[campusIndex];
+      const campus = campuses[i % campuses.length];
 
       const campusDepartments = departments.filter(
-        (d) => d.campus_id.toString() === campus._id.toString()
+        d => d.campus_id.toString() === campus._id.toString()
       );
 
-      const department =
-        campusDepartments[i % campusDepartments.length];
+      const department = campusDepartments[i % campusDepartments.length];
+
+      const fullName =
+        pakFirstNames[i % pakFirstNames.length] +
+        " " +
+        pakLastNames[i % pakLastNames.length];
 
       const student = await Student.create({
         student_id: `STD${i}`,
-        name: faker.person.fullName(),
-        email: generateStudentEmail(i, campusIndex),
-        password_hash: hashedPassword,
+        name: fullName,
+        email: generateStudentEmail(i),
+        password_hash: studentPassword,
         campus_id: campus._id,
         department_id: department._id,
-        semester: faker.number.int({ min: 1, max: 8 }),
+        semester: (i % 8) + 1,
         contact_no: "03000000000",
         status: "active",
         is_email_verified: true
@@ -93,15 +163,18 @@ const seedEnterpriseData = async () => {
       }
     }
 
-    console.log("✅ Creating 100,000 issues distributed across campuses...");
+    console.log("✅ Creating issues...");
     for (let i = 0; i < TOTAL_ISSUES; i++) {
       const student = students[i % students.length];
+      const category = issueCategories[i % issueCategories.length];
+      const subcategory = category.subs[i % category.subs.length];
 
       await Issue.create({
         title: faker.lorem.words(4),
         description: faker.lorem.sentence(),
-        category: "facility",
-        priority: ["low", "medium", "high"][i % 3],
+        primary_category: category.primary,
+        subcategory,
+        priority: ["low","medium","high"][i % 3],
         campus_id: student.campus_id,
         student_id: student._id,
         department_id: student.department_id,
@@ -113,7 +186,7 @@ const seedEnterpriseData = async () => {
       }
     }
 
-    console.log("🎯 Enterprise multi-campus dataset created successfully.");
+    console.log("🎯 Enterprise Pakistani Dataset Created Successfully!");
     process.exit();
 
   } catch (error) {
@@ -122,4 +195,4 @@ const seedEnterpriseData = async () => {
   }
 };
 
-seedEnterpriseData();
+seedEnterprise();

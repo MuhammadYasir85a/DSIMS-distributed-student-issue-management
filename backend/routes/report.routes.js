@@ -4,7 +4,7 @@ const authorizeRoles = require("../middleware/role.middleware");
 
 const {
   getIssueCountByStatus,
-  getIssueCountByDepartment,
+  getIssueCountByCategory,
   getMonthlyIssueTrend
 } = require("../controllers/report.controller");
 
@@ -18,10 +18,10 @@ router.get(
 );
 
 router.get(
-  "/department-count",
+  "/category-count",
   protect,
   authorizeRoles("management", "super_admin"),
-  getIssueCountByDepartment
+  getIssueCountByCategory
 );
 
 router.get(
