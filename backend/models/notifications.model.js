@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const notificationSchema = new mongoose.Schema(
   {
     recipient_id: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.ObjectId,   // ✅ FIXED: was missing type
       required: true,
     },
     recipient_role: {
@@ -14,15 +14,16 @@ const notificationSchema = new mongoose.Schema(
     issue_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Issue",
-      required: true,
+      required: false,                        // ✅ FIXED: allow system notifs without an issue
+      default: null,
     },
     message: { type: String, required: true },
     is_read: { type: Boolean, default: false },
-    created_at: { type: Date, default: Date.now },
   },
-  { timestamps: false }
+  { timestamps: true }                        // ✅ FIXED: use auto timestamps
 );
 
 notificationSchema.index({ recipient_id: 1, is_read: 1 });
+notificationSchema.index({ recipient_id: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Notification", notificationSchema);

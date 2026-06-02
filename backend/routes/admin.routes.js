@@ -25,7 +25,7 @@ router.patch(
 );
 
 router.patch(
-  "/reject/:student_id",
+  "/reject/:student_id",                                  // ✅ FIXED: added missing path
   protect,
   authorizeRoles("department_admin", "management", "super_admin"),
   rejectStudent

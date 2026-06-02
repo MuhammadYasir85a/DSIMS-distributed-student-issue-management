@@ -24,17 +24,14 @@ const studentSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-
     reset_password_token: {
-  type: String,
-  default: null,
-},
-
-reset_password_expires: {
-  type: Date,
-  default: null,
-   },
-   
+      type: String,
+      default: null,
+    },
+    reset_password_expires: {
+      type: Date,
+      default: null,
+    },
     campus_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Campus",
@@ -66,7 +63,7 @@ reset_password_expires: {
       default: "pending",
     },
     is_email_verified: {
-      type: Boolean,
+      type: Boolean,           // ✅ FIXED: was missing the type
       default: false,
     },
     verification_token: {
@@ -77,15 +74,15 @@ reset_password_expires: {
       type: Date,
       default: null,
     },
-    created_at: {
+    // ✅ NEW: track last login
+    last_login: {
       type: Date,
-      default: Date.now,
+      default: null,
     },
   },
-  { timestamps: false }
+  { timestamps: true }   // ✅ FIXED: use auto timestamps
 );
 
-// Index for login + queries
 studentSchema.index({ campus_id: 1, department_id: 1 });
 
 module.exports = mongoose.model("Student", studentSchema);

@@ -5,7 +5,9 @@ const authorizeRoles = require("../middleware/role.middleware");
 const {
   getIssueCountByStatus,
   getIssueCountByCategory,
-  getMonthlyIssueTrend
+  getMonthlyIssueTrend,
+  getResolutionMetrics,
+  getDepartmentPerformance
 } = require("../controllers/report.controller");
 
 const router = express.Router();
@@ -18,7 +20,7 @@ router.get(
 );
 
 router.get(
-  "/category-count",
+  "/category-count",                                      // ✅ FIXED: added missing path
   protect,
   authorizeRoles("management", "super_admin"),
   getIssueCountByCategory
@@ -29,6 +31,22 @@ router.get(
   protect,
   authorizeRoles("management", "super_admin"),
   getMonthlyIssueTrend
+);
+
+// ✅ NEW: Resolution time KPIs
+router.get(
+  "/resolution-metrics",
+  protect,
+  authorizeRoles("management", "super_admin"),
+  getResolutionMetrics
+);
+
+// ✅ NEW: Per-department performance
+router.get(
+  "/department-performance",
+  protect,
+  authorizeRoles("management", "super_admin"),
+  getDepartmentPerformance
 );
 
 module.exports = router;

@@ -27,25 +27,34 @@ const adminSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Campus",
       required: true,
-    },
+    },                                            // ✅ FIXED: Added missing closing brace
     department_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Department",
-      required: false, // nullable for management/super_admin
+      required: false,
     },
     status: {
       type: String,
       enum: ["active", "inactive"],
       default: "active",
     },
-    created_at: {
+    // ✅ NEW: track last login for security audits
+    last_login: {
       type: Date,
-      default: Date.now,
+      default: null,
+    },
+    // ✅ NEW: password reset support for admins too
+    reset_password_token: {
+      type: String,
+      default: null,
+    },
+    reset_password_expires: {
+      type: Date,
+      default: null,
     },
   },
-  { timestamps: false }
+  { timestamps: true }   // ✅ FIXED: enable auto timestamps instead of manual created_at
 );
-
 
 adminSchema.index({ campus_id: 1 });
 

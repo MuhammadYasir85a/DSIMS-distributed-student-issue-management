@@ -2,25 +2,34 @@ const mongoose = require("mongoose");
 const Issue = require("../models/issues.model");
 const Notification = require("../models/notifications.model");
 const Department = require("../models/departments.model");
+const Student = require("../models/students.model");
+const CATEGORIES = require("../utils/categories");
 
 const ALLOWED_STATUSES = [
-  "submitted",
-  "under_review",
-  "in_progress",
-  "resolved",
-  "closed",
-  "rejected"
+  "submitted", "under_review", "in_progress",
+  "resolved", "closed", "rejected"
 ];
 
-// ✅ Status transition rules (state machine)
-// Defines which statuses can transition to which next statuses
 const STATUS_TRANSITIONS = {
   submitted:    ["under_review", "rejected"],
   under_review: ["in_progress", "rejected"],
-  in_progress: ["resolved", "rejected"],
-  resolved:     ["closed", "in_progress"],   // can be reopened to in_progress
-  closed:       [],                           // terminal — no further transitions
-  rejected:     []                            // terminal — no further transitions
+  in_progress:  ["resolved", "rejected"],
+  resolved:     ["closed", "in_progress"],
+  closed:       [],
+  rejected:     []
+};
+
+const ALLOWED_SORT_FIELDS = ["createdAt", "updatedAt", "priority", "status"];
+
+// Helper — anonymize student in lists for admins
+const anonymizeIfNeeded = (issue, viewerRole) => {
+  if (issue.is_anonymous && viewerRole !== "super_admin") {
+    return {
+      ...issue,
+      student_id: { name: "Anonymous", student_id: "HIDDEN", _id: null }
+    };
+  }
+  return issue;
 };
 
 /* ==============================
@@ -35,12 +44,10 @@ const createIssue = async (req, res) => {
 
     const user = req.user;
 
-    // ✅ Validation
     if (!title || !description || !primary_category || !subcategory || !priority || !department_id) {
       return res.status(400).json({ message: "All required fields must be provided." });
     }
 
-    // 🛡️ LOGIC GUARD: Title & description length sanity
     if (title.trim().length < 5 || title.trim().length > 150) {
       return res.status(400).json({ message: "Title must be between 5 and 150 characters." });
     }
@@ -48,11 +55,18 @@ const createIssue = async (req, res) => {
       return res.status(400).json({ message: "Description must be at least 20 characters for clarity." });
     }
 
+    // ✅ NEW: validate subcategory belongs to primary_category
+    if (!CATEGORIES[primary_category] || !CATEGORIES[primary_category].includes(subcategory)) {
+      return res.status(400).json({
+        message: `Invalid subcategory '${subcategory}' for category '${primary_category}'.`,
+        allowed_subcategories: CATEGORIES[primary_category] || []
+      });
+    }
+
     if (!mongoose.Types.ObjectId.isValid(department_id)) {
       return res.status(400).json({ message: "Invalid department_id." });
     }
 
-    // ✅ Validate department exists & belongs to student's campus
     const department = await Department.findById(department_id);
     if (!department) {
       return res.status(400).json({ message: "Invalid department selected." });
@@ -81,7 +95,6 @@ const createIssue = async (req, res) => {
       }]
     });
 
-    // ✅ Notification
     await Notification.create({
       recipient_id: user.user_id,
       recipient_role: "student",
@@ -108,13 +121,12 @@ const getMyIssues = async (req, res) => {
     const user = req.user;
 
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
     const skip = (page - 1) * limit;
 
     const filters = { student_id: user.user_id };
 
     if (req.query.status) {
-      // 🛡️ LOGIC GUARD: Validate status filter value
       if (!ALLOWED_STATUSES.includes(req.query.status)) {
         return res.status(400).json({ message: "Invalid status filter." });
       }
@@ -122,10 +134,14 @@ const getMyIssues = async (req, res) => {
     }
     if (req.query.primary_category) filters.primary_category = req.query.primary_category;
 
+    // ✅ NEW: sort
+    const sortField = ALLOWED_SORT_FIELDS.includes(req.query.sort_by) ? req.query.sort_by : "createdAt";
+    const sortOrder = req.query.sort_order === "asc" ? 1 : -1;
+
     const [issues, total] = await Promise.all([
       Issue.find(filters)
         .populate("department_id", "name")
-        .sort({ createdAt: -1 })
+        .sort({ [sortField]: sortOrder })
         .skip(skip)
         .limit(limit)
         .lean(),
@@ -161,13 +177,15 @@ const getIssueById = async (req, res) => {
     const issue = await Issue.findById(issue_id)
       .populate("department_id", "name")
       .populate("campus_id", "name")
+      .populate("student_id", "name student_id email")           // ✅ NEW
+      .populate("assigned_to_admin_id", "name email")            // ✅ NEW
       .lean();
 
     if (!issue) return res.status(404).json({ message: "Issue not found." });
 
-    // ✅ Access control
+    // Access control
     if (user.role === "student") {
-      if (issue.student_id.toString() !== String(user.user_id)) {
+      if (!issue.student_id || issue.student_id._id.toString() !== String(user.user_id)) {
         return res.status(403).json({ message: "Access denied." });
       }
     } else if (user.role === "department_admin") {
@@ -182,13 +200,14 @@ const getIssueById = async (req, res) => {
         return res.status(403).json({ message: "Access denied." });
       }
     }
-    // super_admin sees all
 
-    // 🛡️ PRIVACY GUARD: Hide student identity if issue is anonymous
-    //    (admins should not see who reported anonymous issues)
-    if (issue.is_anonymous && user.role !== "super_admin") {
-      delete issue.student_id;
+    // Anonymize for non-super-admin viewers
+    if (issue.is_anonymous && user.role !== "super_admin" && user.role !== "student") {
+      issue.student_id = { name: "Anonymous", student_id: "HIDDEN", _id: null };
     }
+
+    // ✅ NEW: tell frontend which status transitions are allowed
+    issue.allowed_status_transitions = STATUS_TRANSITIONS[issue.status] || [];
 
     res.json(issue);
   } catch (error) {
@@ -205,7 +224,7 @@ const getDepartmentIssues = async (req, res) => {
     const user = req.user;
 
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
     const skip = (page - 1) * limit;
 
     const filters = {
@@ -224,7 +243,6 @@ const getDepartmentIssues = async (req, res) => {
     if (req.query.priority) filters.priority = req.query.priority;
 
     if (req.query.search) {
-      // 🛡️ LOGIC GUARD: Escape regex special chars to prevent ReDoS
       const safeSearch = req.query.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       filters.$or = [
         { title: { $regex: safeSearch, $options: "i" } },
@@ -232,23 +250,21 @@ const getDepartmentIssues = async (req, res) => {
       ];
     }
 
+    const sortField = ALLOWED_SORT_FIELDS.includes(req.query.sort_by) ? req.query.sort_by : "createdAt";
+    const sortOrder = req.query.sort_order === "asc" ? 1 : -1;
+
     const [issues, total] = await Promise.all([
       Issue.find(filters)
-        .sort({ createdAt: -1 })
+        .populate("student_id", "name student_id email")        // ✅ NEW
+        .populate("assigned_to_admin_id", "name email")         // ✅ NEW
+        .sort({ [sortField]: sortOrder })
         .skip(skip)
         .limit(limit)
         .lean(),
       Issue.countDocuments(filters)
     ]);
 
-    // 🛡️ PRIVACY GUARD: Mask student IDs for anonymous issues
-    const safeIssues = issues.map(i => {
-      if (i.is_anonymous) {
-        const { student_id, ...rest } = i;
-        return { ...rest, student_id: null };
-      }
-      return i;
-    });
+    const safeIssues = issues.map(i => anonymizeIfNeeded(i, user.role));
 
     res.json({
       page,
@@ -265,7 +281,7 @@ const getDepartmentIssues = async (req, res) => {
 };
 
 /* ==============================
-   ADMIN — UPDATE ISSUE STATUS  (Enterprise-grade)
+   ADMIN — UPDATE ISSUE STATUS
 ============================== */
 const updateIssueStatus = async (req, res) => {
   try {
@@ -288,7 +304,6 @@ const updateIssueStatus = async (req, res) => {
     const issue = await Issue.findById(issue_id);
     if (!issue) return res.status(404).json({ message: "Issue not found." });
 
-    // ✅ Multi-campus + department isolation
     if (
       issue.campus_id.toString() !== String(user.campus_id) ||
       issue.department_id.toString() !== String(user.department_id)
@@ -302,7 +317,6 @@ const updateIssueStatus = async (req, res) => {
       return res.status(400).json({ message: "Status is already set to this value." });
     }
 
-    // 🛡️ ENTERPRISE GUARD 1: STATE MACHINE — enforce valid transitions
     const allowedNext = STATUS_TRANSITIONS[oldStatus] || [];
     if (!allowedNext.includes(new_status)) {
       return res.status(400).json({
@@ -310,41 +324,35 @@ const updateIssueStatus = async (req, res) => {
       });
     }
 
-    // 🛡️ ENTERPRISE GUARD 2: Terminal states cannot be modified
     if (["closed", "rejected"].includes(oldStatus)) {
       return res.status(400).json({
         message: `This issue is already in a terminal state ('${oldStatus}') and cannot be changed.`
       });
     }
 
-    // 🛡️ ENTERPRISE GUARD 3: Resolving requires detailed summary (30+ chars)
     if (new_status === "resolved") {
       if (!resolution_summary || resolution_summary.trim().length < 30) {
         return res.status(400).json({
-          message: "Resolution summary is required and must be at least 30 characters explaining how the issue was resolved."
+          message: "Resolution summary is required and must be at least 30 characters."
         });
       }
-      // Save into existing resolution_summary field (already in your schema)
       issue.resolution_summary = resolution_summary.trim();
     }
 
-    // 🛡️ ENTERPRISE GUARD 4: Rejecting requires clear reason (20+ chars)
     if (new_status === "rejected") {
       if (!message || message.trim().length < 20) {
         return res.status(400).json({
-          message: "A clear rejection reason (min 20 characters) is required in the 'message' field to reject an issue."
+          message: "A clear rejection reason (min 20 characters) is required."
         });
       }
     }
 
-    // 🛡️ ENTERPRISE GUARD 5: Only allow "in_progress" if issue has been assigned
     if (new_status === "in_progress" && !issue.assigned_to_admin_id) {
       return res.status(400).json({
         message: "Issue must be assigned to an admin before being marked 'in_progress'."
       });
     }
 
-    // 🛡️ ENTERPRISE GUARD 6: Status update message length cap (prevent spam)
     if (message && message.length > 1000) {
       return res.status(400).json({ message: "Status update message cannot exceed 1000 characters." });
     }
@@ -361,7 +369,6 @@ const updateIssueStatus = async (req, res) => {
 
     await issue.save();
 
-    // ✅ Notify student
     await Notification.create({
       recipient_id: issue.student_id,
       recipient_role: "student",
@@ -405,21 +412,18 @@ const assignIssueToAdmin = async (req, res) => {
       return res.status(403).json({ message: "Unauthorized access." });
     }
 
-    // 🛡️ LOGIC GUARD 1: Cannot assign a terminal-state issue
     if (["closed", "rejected"].includes(issue.status)) {
       return res.status(400).json({
         message: `Cannot assign an issue that is already '${issue.status}'.`
       });
     }
 
-    // 🛡️ LOGIC GUARD 2: Prevent redundant self-assignment
     if (issue.assigned_to_admin_id && issue.assigned_to_admin_id.toString() === String(user.user_id)) {
       return res.status(400).json({
         message: "This issue is already assigned to you."
       });
     }
 
-    // 🛡️ LOGIC GUARD 3: Auto-advance from "submitted" to "under_review" on first assignment
     let statusChanged = false;
     let oldStatus = issue.status;
     if (issue.status === "submitted") {
@@ -441,7 +445,6 @@ const assignIssueToAdmin = async (req, res) => {
 
     await issue.save();
 
-    // ✅ Notify student about pickup
     await Notification.create({
       recipient_id: issue.student_id,
       recipient_role: "student",
@@ -461,7 +464,6 @@ const assignIssueToAdmin = async (req, res) => {
 
 /* ==============================
    STUDENT — UPDATE OWN ISSUE
-   (Only allowed while status === "submitted")
 ============================== */
 const updateOwnIssue = async (req, res) => {
   try {
@@ -478,9 +480,7 @@ const updateOwnIssue = async (req, res) => {
     }
 
     const issue = await Issue.findById(issue_id);
-    if (!issue) {
-      return res.status(404).json({ message: "Issue not found." });
-    }
+    if (!issue) return res.status(404).json({ message: "Issue not found." });
 
     if (issue.student_id.toString() !== String(user.user_id)) {
       return res.status(403).json({ message: "You can only edit your own issues." });
@@ -499,12 +499,22 @@ const updateOwnIssue = async (req, res) => {
       return res.status(400).json({ message: "Provide at least one field to update." });
     }
 
-    // 🛡️ LOGIC GUARD: Length sanity checks if those fields are being changed
     if (title && (title.trim().length < 5 || title.trim().length > 150)) {
       return res.status(400).json({ message: "Title must be between 5 and 150 characters." });
     }
     if (description && description.trim().length < 20) {
       return res.status(400).json({ message: "Description must be at least 20 characters." });
+    }
+
+    // ✅ NEW: validate subcategory if either is being changed
+    const finalPrimary = primary_category || issue.primary_category;
+    const finalSub = subcategory || issue.subcategory;
+    if ((primary_category || subcategory) &&
+        (!CATEGORIES[finalPrimary] || !CATEGORIES[finalPrimary].includes(finalSub))) {
+      return res.status(400).json({
+        message: `Invalid subcategory '${finalSub}' for category '${finalPrimary}'.`,
+        allowed_subcategories: CATEGORIES[finalPrimary] || []
+      });
     }
 
     if (department_id && department_id !== issue.department_id.toString()) {
@@ -579,7 +589,6 @@ const updateOwnIssue = async (req, res) => {
 
 /* ==============================
    STUDENT — DELETE OWN ISSUE
-   (Only allowed while status === "submitted")
 ============================== */
 const deleteOwnIssue = async (req, res) => {
   try {
@@ -591,9 +600,7 @@ const deleteOwnIssue = async (req, res) => {
     }
 
     const issue = await Issue.findById(issue_id);
-    if (!issue) {
-      return res.status(404).json({ message: "Issue not found." });
-    }
+    if (!issue) return res.status(404).json({ message: "Issue not found." });
 
     if (issue.student_id.toString() !== String(user.user_id)) {
       return res.status(403).json({ message: "You can only delete your own issues." });
@@ -619,11 +626,8 @@ const deleteOwnIssue = async (req, res) => {
   }
 };
 
-
 /* ==============================
    ADMIN — EDIT ISSUE DETAILS
-   (Admin can fix description / category mistakes
-    but CANNOT change status, student, or campus here)
 ============================== */
 const adminEditIssue = async (req, res) => {
   try {
@@ -640,11 +644,8 @@ const adminEditIssue = async (req, res) => {
     }
 
     const issue = await Issue.findById(issue_id);
-    if (!issue) {
-      return res.status(404).json({ message: "Issue not found." });
-    }
+    if (!issue) return res.status(404).json({ message: "Issue not found." });
 
-    // ✅ Department + campus isolation
     if (
       issue.campus_id.toString() !== String(user.campus_id) ||
       issue.department_id.toString() !== String(user.department_id)
@@ -652,26 +653,22 @@ const adminEditIssue = async (req, res) => {
       return res.status(403).json({ message: "Unauthorized access to this issue." });
     }
 
-    // 🛡️ GUARD 1: Cannot edit closed/rejected issues (terminal states)
     if (["closed", "rejected"].includes(issue.status)) {
       return res.status(400).json({
         message: `Cannot edit an issue that is already '${issue.status}'.`
       });
     }
 
-    // 🛡️ GUARD 2: At least one editable field must be provided
     if (!title && !description && !primary_category && !subcategory && !priority) {
       return res.status(400).json({ message: "Provide at least one field to update." });
     }
 
-    // 🛡️ GUARD 3: Reason for edit is mandatory (accountability)
     if (!edit_reason || edit_reason.trim().length < 15) {
       return res.status(400).json({
         message: "An edit reason (min 15 characters) is required for accountability."
       });
     }
 
-    // 🛡️ GUARD 4: Length sanity
     if (title && (title.trim().length < 5 || title.trim().length > 150)) {
       return res.status(400).json({ message: "Title must be between 5 and 150 characters." });
     }
@@ -679,35 +676,28 @@ const adminEditIssue = async (req, res) => {
       return res.status(400).json({ message: "Description must be at least 20 characters." });
     }
 
-    // ✅ Track what actually changed
+    const finalPrimary = primary_category || issue.primary_category;
+    const finalSub = subcategory || issue.subcategory;
+    if ((primary_category || subcategory) &&
+        (!CATEGORIES[finalPrimary] || !CATEGORIES[finalPrimary].includes(finalSub))) {
+      return res.status(400).json({
+        message: `Invalid subcategory '${finalSub}' for category '${finalPrimary}'.`,
+        allowed_subcategories: CATEGORIES[finalPrimary] || []
+      });
+    }
+
     const changedFields = [];
 
-    if (title && title.trim() !== issue.title) {
-      changedFields.push("title");
-      issue.title = title.trim();
-    }
-    if (description && description.trim() !== issue.description) {
-      changedFields.push("description");
-      issue.description = description.trim();
-    }
-    if (primary_category && primary_category !== issue.primary_category) {
-      changedFields.push("primary_category");
-      issue.primary_category = primary_category;
-    }
-    if (subcategory && subcategory !== issue.subcategory) {
-      changedFields.push("subcategory");
-      issue.subcategory = subcategory;
-    }
-    if (priority && priority !== issue.priority) {
-      changedFields.push("priority");
-      issue.priority = priority;
-    }
+    if (title && title.trim() !== issue.title) { changedFields.push("title"); issue.title = title.trim(); }
+    if (description && description.trim() !== issue.description) { changedFields.push("description"); issue.description = description.trim(); }
+    if (primary_category && primary_category !== issue.primary_category) { changedFields.push("primary_category"); issue.primary_category = primary_category; }
+    if (subcategory && subcategory !== issue.subcategory) { changedFields.push("subcategory"); issue.subcategory = subcategory; }
+    if (priority && priority !== issue.priority) { changedFields.push("priority"); issue.priority = priority; }
 
     if (changedFields.length === 0) {
       return res.status(400).json({ message: "No changes detected." });
     }
 
-    // ✅ Log in audit trail (uses updates array — already exists)
     issue.updates.push({
       updated_by: user.user_id,
       updater_role: user.role,
@@ -718,7 +708,6 @@ const adminEditIssue = async (req, res) => {
 
     await issue.save();
 
-    // ✅ Notify student so they know admin modified their issue
     await Notification.create({
       recipient_id: issue.student_id,
       recipient_role: "student",
@@ -741,8 +730,6 @@ const adminEditIssue = async (req, res) => {
 
 /* ==============================
    SUPER ADMIN — DELETE RESOLVED ISSUE
-   (Only resolved/closed issues can be deleted
-    — never delete an open / pending issue)
 ============================== */
 const superAdminDeleteIssue = async (req, res) => {
   try {
@@ -755,25 +742,20 @@ const superAdminDeleteIssue = async (req, res) => {
     }
 
     const issue = await Issue.findById(issue_id);
-    if (!issue) {
-      return res.status(404).json({ message: "Issue not found." });
-    }
+    if (!issue) return res.status(404).json({ message: "Issue not found." });
 
-    // 🛡️ GUARD 1: Only resolved or closed issues can be deleted
     if (!["resolved", "closed"].includes(issue.status)) {
       return res.status(403).json({
-        message: `Cannot delete an issue with status '${issue.status}'. Only resolved or closed issues can be deleted by super admin. This protects students from arbitrary deletion of pending issues.`
+        message: `Cannot delete an issue with status '${issue.status}'. Only resolved or closed issues can be deleted.`
       });
     }
 
-    // 🛡️ GUARD 2: Reason for deletion is mandatory
     if (!delete_reason || delete_reason.trim().length < 20) {
       return res.status(400).json({
         message: "A delete reason (min 20 characters) is required for accountability."
       });
     }
 
-    // ✅ Capture issue summary for audit log BEFORE deletion
     const auditSnapshot = {
       title: issue.title,
       student_id: issue.student_id,
@@ -786,11 +768,9 @@ const superAdminDeleteIssue = async (req, res) => {
       deleted_at: new Date()
     };
 
-    // ✅ Delete the issue and related notifications
     await Issue.deleteOne({ _id: issue_id });
     await Notification.deleteMany({ issue_id: issue._id });
 
-    // ✅ Log deletion event as a notification to super admin team (audit trail)
     await Notification.create({
       recipient_id: user.user_id,
       recipient_role: "super_admin",
@@ -809,6 +789,232 @@ const superAdminDeleteIssue = async (req, res) => {
   }
 };
 
+/* ==============================
+   STUDENT — REOPEN RESOLVED ISSUE
+============================== */
+const reopenIssue = async (req, res) => {
+  try {
+    const { issue_id } = req.params;
+    const { reason } = req.body;
+    const user = req.user;
+
+    if (!mongoose.Types.ObjectId.isValid(issue_id)) {
+      return res.status(400).json({ message: "Invalid issue id." });
+    }
+
+    if (!reason || reason.trim().length < 20) {
+      return res.status(400).json({ message: "Reopening reason required (min 20 chars)." });
+    }
+
+    const issue = await Issue.findById(issue_id);
+    if (!issue) return res.status(404).json({ message: "Issue not found." });
+
+    if (issue.student_id.toString() !== String(user.user_id)) {
+      return res.status(403).json({ message: "Access denied." });
+    }
+
+    if (issue.status !== "resolved") {
+      return res.status(400).json({ message: "Only resolved issues can be reopened." });
+    }
+
+    // Count past reopens from updates
+    const reopenCount = issue.updates.filter(u => u.message && u.message.toLowerCase().includes("reopened")).length;
+    if (reopenCount >= 3) {
+      return res.status(400).json({
+        message: "This issue has been reopened too many times. Please contact super admin."
+      });
+    }
+
+    issue.status = "in_progress";
+    issue.updates.push({
+      updated_by: user.user_id,
+      updater_role: "student",
+      message: `Student reopened issue. Reason: ${reason.trim()}`,
+      old_status: "resolved",
+      new_status: "in_progress"
+    });
+
+    await issue.save();
+
+    if (issue.assigned_to_admin_id) {
+      await Notification.create({
+        recipient_id: issue.assigned_to_admin_id,
+        recipient_role: "department_admin",
+        issue_id: issue._id,
+        message: `An issue was reopened by the student. Reason: ${reason.trim()}`
+      });
+    }
+
+    res.json({ message: "Issue reopened successfully", issue });
+  } catch (error) {
+    console.error("Reopen issue error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/* ==============================
+   STUDENT DASHBOARD STATS
+============================== */
+const getStudentDashboardStats = async (req, res) => {
+  try {
+    const user = req.user;
+
+    const [statusCounts, recentIssues, totalCount] = await Promise.all([
+      Issue.aggregate([
+        { $match: { student_id: new mongoose.Types.ObjectId(user.user_id) } },
+        { $group: { _id: "$status", count: { $sum: 1 } } }
+      ]),
+      Issue.find({ student_id: user.user_id })
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .populate("department_id", "name")
+        .select("title status priority createdAt")
+        .lean(),
+      Issue.countDocuments({ student_id: user.user_id })
+    ]);
+
+    const statusMap = { submitted: 0, under_review: 0, in_progress: 0, resolved: 0, closed: 0, rejected: 0 };
+    statusCounts.forEach(s => { statusMap[s._id] = s.count; });
+
+    res.json({
+      total: totalCount,
+      by_status: statusMap,
+      recent_issues: recentIssues
+    });
+  } catch (error) {
+    console.error("Student dashboard error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/* ==============================
+   ADMIN DASHBOARD STATS
+============================== */
+const getAdminDashboardStats = async (req, res) => {
+  try {
+    const user = req.user;
+
+    const baseMatch = {
+      campus_id: new mongoose.Types.ObjectId(user.campus_id),
+      department_id: new mongoose.Types.ObjectId(user.department_id)
+    };
+
+    const [statusCounts, priorityCounts, recentIssues, pendingStudents] = await Promise.all([
+      Issue.aggregate([
+        { $match: baseMatch },
+        { $group: { _id: "$status", count: { $sum: 1 } } }
+      ]),
+      Issue.aggregate([
+        { $match: baseMatch },
+        { $group: { _id: "$priority", count: { $sum: 1 } } }
+      ]),
+      Issue.find(baseMatch)
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .populate("student_id", "name student_id")
+        .select("title status priority createdAt is_anonymous")
+        .lean(),
+      Student.countDocuments({
+        campus_id: user.campus_id,
+        department_id: user.department_id,
+        status: "pending",
+        is_email_verified: true
+      })
+    ]);
+
+    const statusMap = { submitted: 0, under_review: 0, in_progress: 0, resolved: 0, closed: 0, rejected: 0 };
+    statusCounts.forEach(s => { statusMap[s._id] = s.count; });
+
+    const priorityMap = { low: 0, medium: 0, high: 0, urgent: 0 };
+    priorityCounts.forEach(p => { priorityMap[p._id] = p.count; });
+
+    const safeRecent = recentIssues.map(i => anonymizeIfNeeded(i, user.role));
+
+    res.json({
+      by_status: statusMap,
+      by_priority: priorityMap,
+      pending_approvals: pendingStudents,
+      recent_issues: safeRecent
+    });
+  } catch (error) {
+    console.error("Admin dashboard error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
+/* ==============================
+   SUPER ADMIN — VIEW ALL ISSUES (Read-only, cross-campus)
+============================== */
+const getAllIssuesSuperAdmin = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
+
+    const filters = {};
+
+    // Flexible filters
+    if (req.query.campus_id && mongoose.Types.ObjectId.isValid(req.query.campus_id)) {
+      filters.campus_id = req.query.campus_id;
+    }
+    if (req.query.department_id && mongoose.Types.ObjectId.isValid(req.query.department_id)) {
+      filters.department_id = req.query.department_id;
+    }
+    if (req.query.status) {
+      if (!ALLOWED_STATUSES.includes(req.query.status)) {
+        return res.status(400).json({ message: "Invalid status filter." });
+      }
+      filters.status = req.query.status;
+    }
+    if (req.query.priority) filters.priority = req.query.priority;
+    if (req.query.primary_category) filters.primary_category = req.query.primary_category;
+
+    if (req.query.search) {
+      const safeSearch = req.query.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      filters.$or = [
+        { title: { $regex: safeSearch, $options: "i" } },
+        { description: { $regex: safeSearch, $options: "i" } }
+      ];
+    }
+
+    const sortField = ALLOWED_SORT_FIELDS.includes(req.query.sort_by) ? req.query.sort_by : "createdAt";
+    const sortOrder = req.query.sort_order === "asc" ? 1 : -1;
+
+    const [issues, total] = await Promise.all([
+      Issue.find(filters)
+        .populate("student_id", "name student_id email")
+        .populate("assigned_to_admin_id", "name email")
+        .populate("department_id", "name")
+        .populate("campus_id", "name")
+        .sort({ [sortField]: sortOrder })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Issue.countDocuments(filters)
+    ]);
+
+    // Anonymize
+    const safeIssues = issues.map(i => {
+      if (i.is_anonymous) {
+        return { ...i, student_id: { name: "Anonymous", student_id: "HIDDEN", _id: null } };
+      }
+      return i;
+    });
+
+    res.json({
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      count: safeIssues.length,
+      issues: safeIssues
+    });
+  } catch (error) {
+    console.error("Get all issues error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
 
 
 module.exports = {
@@ -820,6 +1026,10 @@ module.exports = {
   assignIssueToAdmin,
   updateOwnIssue,
   deleteOwnIssue,
-  adminEditIssue,          // ← new
-  superAdminDeleteIssue    // ← new
+  adminEditIssue,
+  superAdminDeleteIssue,
+  reopenIssue,                  // ✅ NEW
+  getStudentDashboardStats,     // ✅ NEW
+  getAdminDashboardStats,
+  getAllIssuesSuperAdmin
 };

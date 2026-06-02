@@ -1,4 +1,5 @@
 const Student = require("../models/students.model");
+const Notification = require("../models/notifications.model");
 
 /* ==============================
    GET PENDING STUDENTS
@@ -12,17 +13,15 @@ const getPendingStudents = async (req, res) => {
       is_email_verified: true
     };
 
-    // ✅ Multi-campus isolation
     if (user.role === "department_admin") {
       filters.campus_id = user.campus_id;
       filters.department_id = user.department_id;
     } else if (user.role === "management") {
       filters.campus_id = user.campus_id;
     }
-    // super_admin sees all
 
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
     const skip = (page - 1) * limit;
 
     const [students, total] = await Promise.all([
@@ -61,7 +60,6 @@ const approveStudent = async (req, res) => {
     const student = await Student.findById(student_id);
     if (!student) return res.status(404).json({ message: "Student not found." });
 
-    // ✅ Multi-campus isolation
     if (user.role === "department_admin") {
       if (
         student.campus_id.toString() !== String(user.campus_id) ||
@@ -86,7 +84,14 @@ const approveStudent = async (req, res) => {
     student.status = "active";
     await student.save();
 
-    // ✅ Send response (was missing!)
+    // ✅ NEW: notify student
+    await Notification.create({
+      recipient_id: student._id,
+      recipient_role: "student",
+      issue_id: null,
+      message: "Your account has been approved. You can now log in and submit issues."
+    });
+
     res.json({
       message: "Student approved successfully.",
       student: {
@@ -104,17 +109,23 @@ const approveStudent = async (req, res) => {
 };
 
 /* ==============================
-   REJECT STUDENT
+   REJECT STUDENT — now requires reason
 ============================== */
 const rejectStudent = async (req, res) => {
   try {
     const { student_id } = req.params;
+    const { reject_reason } = req.body;
     const user = req.user;
+
+    if (!reject_reason || reject_reason.trim().length < 20) {
+      return res.status(400).json({
+        message: "A rejection reason (min 20 characters) is required for accountability."
+      });
+    }
 
     const student = await Student.findById(student_id);
     if (!student) return res.status(404).json({ message: "Student not found." });
 
-    // ✅ Multi-campus isolation
     if (user.role === "department_admin") {
       if (
         student.campus_id.toString() !== String(user.campus_id) ||
@@ -131,7 +142,19 @@ const rejectStudent = async (req, res) => {
     student.status = "suspended";
     await student.save();
 
-    res.json({ message: "Student rejected.", student_id: student._id });
+    // ✅ NEW: notify student
+    await Notification.create({
+      recipient_id: student._id,
+      recipient_role: "student",
+      issue_id: null,
+      message: `Your registration was rejected. Reason: ${reject_reason.trim()}`
+    });
+
+    res.json({
+      message: "Student rejected.",
+      student_id: student._id,
+      reason: reject_reason.trim()
+    });
   } catch (error) {
     console.error("Reject student error:", error);
     res.status(500).json({ message: error.message });

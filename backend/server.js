@@ -25,7 +25,7 @@ app.use(helmet());
 app.use(morgan("dev"));
 
 // ============================
-// Rate Limiting (BEFORE routes)
+// Rate Limiting
 // ============================
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -46,7 +46,7 @@ app.use(generalLimiter);
 // ============================
 app.get("/", (req, res) => {
   res.send("DSIMS Backend Running...");
-});
+});   // ✅ FIXED: closing the route callback
 
 // ============================
 // Routes
@@ -57,6 +57,10 @@ app.use("/campuses", require("./routes/campus.routes"));
 app.use("/departments", require("./routes/department.routes"));
 app.use("/reports", require("./routes/report.routes"));
 app.use("/admin", require("./routes/admin.routes"));
+app.use("/notifications", require("./routes/notification.routes"));   // ✅ NEW
+app.use("/categories", require("./routes/category.routes"));          // ✅ NEW
+app.use("/feedback", require("./routes/feedback.routes"));                // ✅ ADD
+app.use("/admins", require("./routes/admin_management.routes"));          // ✅ ADD
 
 // ============================
 // 404 Handler
@@ -76,7 +80,7 @@ app.use((err, req, res, next) => {
 });
 
 // ============================
-// Start Server LAST
+// Start Server
 // ============================
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

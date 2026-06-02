@@ -17,29 +17,24 @@ const registerStudent = async (req, res) => {
       campus_id, department_id, semester, contact_no
     } = req.body;
 
-    // ✅ Required fields check
     if (!student_id || !name || !email || !password || !campus_id || !department_id || !semester || !contact_no) {
       return res.status(400).json({ message: "All fields are required." });
     }
 
-    // ✅ Strict student email format
-    const studentEmailRegex = /^[a-z]{4}\d{2}[abcd]\d{3}@namal\.edu\.pk$/;
+    const studentEmailRegex = /^[a-z]{4}\d{2}[abcd]\d{3,6}@namal\.edu\.pk$/;
     if (!studentEmailRegex.test(email)) {
       return res.status(400).json({
         message: "Invalid student email format. Example: bscs23a123@namal.edu.pk"
       });
     }
 
-    // ✅ Password length
     if (password.length < 8) {
       return res.status(400).json({ message: "Password must be at least 8 characters." });
     }
 
-    // ✅ Campus validation
     const campus = await Campus.findById(campus_id);
     if (!campus) return res.status(400).json({ message: "Invalid campus selected." });
 
-    // ✅ Department validation
     const department = await Department.findById(department_id);
     if (!department) return res.status(400).json({ message: "Invalid department selected." });
 
@@ -47,7 +42,6 @@ const registerStudent = async (req, res) => {
       return res.status(400).json({ message: "Department does not belong to selected campus." });
     }
 
-    // ✅ Duplicate checks
     const existingEmail = await Student.findOne({ email });
     if (existingEmail) return res.status(400).json({ message: "Email already registered." });
 
@@ -110,7 +104,7 @@ const verifyEmail = async (req, res) => {
 };
 
 /* ==============================
-   LOGIN
+   LOGIN — now embeds name & email in JWT + tracks last_login
 ============================== */
 const loginUser = async (req, res) => {
   try {
@@ -120,7 +114,9 @@ const loginUser = async (req, res) => {
       return res.status(400).json({ message: "Email and password are required." });
     }
 
-    let user = await Student.findOne({ email });
+    let user = await Student.findOne({ email })
+      .populate("campus_id", "name")
+      .populate("department_id", "name");
     let role;
 
     if (user) {
@@ -132,7 +128,9 @@ const loginUser = async (req, res) => {
       if (user.status !== "active")
         return res.status(403).json({ message: "Awaiting admin approval." });
     } else {
-      user = await Admin.findOne({ email });
+      user = await Admin.findOne({ email })
+        .populate("campus_id", "name")
+        .populate("department_id", "name");
       if (!user) return res.status(400).json({ message: "Invalid credentials." });
 
       if (user.status !== "active")
@@ -144,15 +142,27 @@ const loginUser = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) return res.status(400).json({ message: "Invalid credentials." });
 
+    // ✅ NEW: Track last login (non-blocking — don't fail login if this fails)
+    try {
+      user.last_login = new Date();
+      await user.save();
+    } catch (e) { /* silent */ }
+
+    // ✅ Token expiry: 1h for student, 8h for admins
+    const tokenExpiry = role === "student" ? "1h" : "8h";
+
+    // ✅ JWT now includes name & email
     const token = jwt.sign(
       {
         user_id: user._id,
+        name: user.name,
+        email: user.email,
         role,
-        campus_id: user.campus_id,
-        department_id: user.department_id || null
+        campus_id: user.campus_id?._id || user.campus_id,
+        department_id: user.department_id?._id || user.department_id || null
       },
       process.env.JWT_SECRET,
-      { expiresIn: "1h" }
+      { expiresIn: tokenExpiry }
     );
 
     res.json({
@@ -163,8 +173,8 @@ const loginUser = async (req, res) => {
         name: user.name,
         email: user.email,
         role,
-        campus_id: user.campus_id,
-        department_id: user.department_id || null
+        campus: user.campus_id,        // populated object
+        department: user.department_id // populated object (or null)
       }
     });
 
@@ -175,29 +185,74 @@ const loginUser = async (req, res) => {
 };
 
 /* ==============================
-   FORGOT PASSWORD
+   GET CURRENT USER — for frontend session restore
+============================== */
+const getCurrentUser = async (req, res) => {
+  try {
+    const { user_id, role } = req.user;
+
+    let user;
+    if (role === "student") {
+      user = await Student.findById(user_id)
+        .select("-password_hash -verification_token -verification_token_expires -reset_password_token -reset_password_expires")
+        .populate("campus_id", "name location")
+        .populate("department_id", "name type")
+        .lean();
+    } else {
+      user = await Admin.findById(user_id)
+        .select("-password_hash -reset_password_token -reset_password_expires")
+        .populate("campus_id", "name location")
+        .populate("department_id", "name type")
+        .lean();
+    }
+
+    if (!user) return res.status(404).json({ message: "User not found." });
+
+    if (user.status !== "active") {
+      return res.status(403).json({ message: "Account is no longer active." });
+    }
+
+    res.json({ user: { ...user, role } });
+  } catch (error) {
+    console.error("Get current user error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+/* ==============================
+   FORGOT PASSWORD — now supports admin too
 ============================== */
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ message: "Email is required." });
 
-    const student = await Student.findOne({ email });
-    if (!student) return res.status(404).json({ message: "No account found with this email." });
+    // Try student first
+    let account = await Student.findOne({ email });
+    let accountType = "student";
 
-    if (!student.is_email_verified) {
+    if (!account) {
+      account = await Admin.findOne({ email });
+      accountType = "admin";
+    }
+
+    if (!account) {
+      return res.status(404).json({ message: "No account found with this email." });
+    }
+
+    if (accountType === "student" && !account.is_email_verified) {
       return res.status(403).json({ message: "Email not verified." });
     }
 
     const reset_token = crypto.randomBytes(32).toString("hex");
     const reset_password_expires = new Date(Date.now() + 60 * 60 * 1000);
 
-    student.reset_password_token = reset_token;
-    student.reset_password_expires = reset_password_expires;
-    await student.save();
+    account.reset_password_token = reset_token;
+    account.reset_password_expires = reset_password_expires;
+    await account.save();
 
     console.log("\n===== PASSWORD RESET SIMULATION =====");
-    console.log(`Reset link for ${email}:`);
+    console.log(`Reset link for ${email} (${accountType}):`);
     console.log(`http://localhost:5000/auth/reset-password/${reset_token}`);
     console.log("=====================================\n");
 
@@ -210,7 +265,7 @@ const forgotPassword = async (req, res) => {
 };
 
 /* ==============================
-   RESET PASSWORD
+   RESET PASSWORD — now supports admin too
 ============================== */
 const resetPassword = async (req, res) => {
   try {
@@ -221,19 +276,27 @@ const resetPassword = async (req, res) => {
       return res.status(400).json({ message: "Password must be at least 8 characters." });
     }
 
-    const student = await Student.findOne({
+    // Look in both Student and Admin
+    let account = await Student.findOne({
       reset_password_token: token,
       reset_password_expires: { $gt: new Date() }
     });
 
-    if (!student) {
+    if (!account) {
+      account = await Admin.findOne({
+        reset_password_token: token,
+        reset_password_expires: { $gt: new Date() }
+      });
+    }
+
+    if (!account) {
       return res.status(400).json({ message: "Invalid or expired reset token." });
     }
 
-    student.password_hash = await bcrypt.hash(new_password, 10);
-    student.reset_password_token = null;
-    student.reset_password_expires = null;
-    await student.save();
+    account.password_hash = await bcrypt.hash(new_password, 10);
+    account.reset_password_token = null;
+    account.reset_password_expires = null;
+    await account.save();
 
     res.json({ message: "Password reset successfully." });
   } catch (error) {
@@ -242,10 +305,93 @@ const resetPassword = async (req, res) => {
   }
 };
 
+/* ==============================
+   UPDATE OWN PROFILE — for both student & admin
+============================== */
+const updateMyProfile = async (req, res) => {
+  try {
+    const { user_id, role } = req.user;
+    const { contact_no, current_password, new_password } = req.body;
+
+    const Model = role === "student" ? Student : Admin;
+    const user = await Model.findById(user_id);
+    if (!user) return res.status(404).json({ message: "User not found." });
+
+    let changedFields = [];
+
+    if (contact_no && role === "student") {
+      user.contact_no = contact_no;
+      changedFields.push("contact_no");
+    }
+
+    if (new_password) {
+      if (!current_password) {
+        return res.status(400).json({ message: "Current password is required to change password." });
+      }
+      const isMatch = await bcrypt.compare(current_password, user.password_hash);
+      if (!isMatch) {
+        return res.status(400).json({ message: "Current password incorrect." });
+      }
+      if (new_password.length < 8) {
+        return res.status(400).json({ message: "New password must be at least 8 characters." });
+      }
+      user.password_hash = await bcrypt.hash(new_password, 10);
+      changedFields.push("password");
+    }
+
+    if (changedFields.length === 0) {
+      return res.status(400).json({ message: "Nothing to update." });
+    }
+
+    await user.save();
+
+    res.json({
+      message: "Profile updated successfully.",
+      updated_fields: changedFields
+    });
+  } catch (error) {
+    console.error("Update profile error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const TokenBlacklist = require("../models/tokenBlacklist.model");
+
+const logoutUser = async (req, res) => {
+  try {
+    const token = req.token;
+    const user_id = req.user.user_id;
+
+    // Decode to get expiry
+    const decoded = jwt.decode(token);
+    const expires_at = new Date(decoded.exp * 1000);
+
+    // Add to blacklist (TTL will auto-clean later)
+    await TokenBlacklist.create({
+      token,
+      user_id,
+      expires_at
+    });
+
+    res.json({ message: "Logged out successfully." });
+  } catch (error) {
+    // If already blacklisted (duplicate), still treat as success
+    if (error.code === 11000) {
+      return res.json({ message: "Already logged out." });
+    }
+    console.error("Logout error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
 module.exports = {
   registerStudent,
   verifyEmail,
   loginUser,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  getCurrentUser,
+  updateMyProfile,
+  logoutUser
 };
