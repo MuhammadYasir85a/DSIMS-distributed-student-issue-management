@@ -7,6 +7,9 @@ const Admin = require("../models/admins.model");
 const Campus = require("../models/campuses.model");
 const Department = require("../models/departments.model");
 
+// ✅ Frontend base URL (used for clickable links in emails / dev console)
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+
 /* ==============================
    REGISTER STUDENT
 ============================== */
@@ -251,9 +254,10 @@ const forgotPassword = async (req, res) => {
     account.reset_password_expires = reset_password_expires;
     await account.save();
 
+    // ✅ FIXED: link now points to the FRONTEND page, not backend route
     console.log("\n===== PASSWORD RESET SIMULATION =====");
     console.log(`Reset link for ${email} (${accountType}):`);
-    console.log(`http://localhost:5000/auth/reset-password/${reset_token}`);
+    console.log(`${FRONTEND_URL}/reset-password/${reset_token}`);
     console.log("=====================================\n");
 
     res.json({ message: "Password reset link generated. Check console." });
