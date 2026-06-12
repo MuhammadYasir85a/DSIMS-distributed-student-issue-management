@@ -9,7 +9,8 @@ const {
   getAdminIssues,
   getAdminFeedback,
   getAdminLeaderboard,
-  updateAdminStatus
+  updateAdminStatus,
+  createAdmin
 } = require("../controllers/admin_management.controller");
 
 // All routes require super_admin
@@ -19,7 +20,8 @@ router.get("/:admin_id", protect, authorizeRoles("super_admin"), getAdminDetail)
 router.get("/:admin_id/issues", protect, authorizeRoles("super_admin"), getAdminIssues);
 router.get("/:admin_id/feedback", protect, authorizeRoles("super_admin"), getAdminFeedback);
 router.patch("/:admin_id/status", protect, authorizeRoles("super_admin"), updateAdminStatus);
-
+// Super admin creates a new admin
+router.post("/", protect, authorizeRoles("super_admin"), createAdmin);
 
 
 module.exports = router;

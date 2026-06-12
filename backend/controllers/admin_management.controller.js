@@ -419,11 +419,102 @@ const updateAdminStatus = async (req, res) => {
   }
 };
 
+/* ==============================
+   SUPER ADMIN — CREATE NEW ADMIN
+============================== */
+const bcrypt = require("bcrypt");
+
+const createAdmin = async (req, res) => {
+  try {
+    const { name, email, password, role, campus_id, department_id } = req.body;
+
+    // Validation
+    if (!name || !email || !password || !role || !campus_id) {
+      return res.status(400).json({ 
+        message: "Name, email, password, role, and campus are required." 
+      });
+    }
+
+    if (!["department_admin", "management", "super_admin"].includes(role)) {
+      return res.status(400).json({ message: "Invalid role." });
+    }
+
+    // Block super_admin creation via API
+if (role === "super_admin") {
+  return res.status(403).json({
+    message: "Super admin accounts cannot be created via the system."
+  });
+}
+
+    if (password.length < 8) {
+      return res.status(400).json({ message: "Password must be at least 8 characters." });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(campus_id)) {
+      return res.status(400).json({ message: "Invalid campus_id." });
+    }
+
+    // Department admin must have department_id
+    if (role === "department_admin" && !department_id) {
+      return res.status(400).json({ 
+        message: "Department is required for department admin." 
+      });
+    }
+
+    if (department_id && !mongoose.Types.ObjectId.isValid(department_id)) {
+      return res.status(400).json({ message: "Invalid department_id." });
+    }
+
+    // Check duplicate email
+    const existing = await Admin.findOne({ email: email.toLowerCase() });
+    if (existing) {
+      return res.status(400).json({ message: "Email already registered." });
+    }
+
+    // Hash password
+    const password_hash = await bcrypt.hash(password, 10);
+
+    const admin = await Admin.create({
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+      password_hash,
+      role,
+      campus_id,
+      department_id: role === "department_admin" ? department_id : null,
+      status: "active"
+    });
+
+    // Notify the new admin (welcome notification)
+    await Notification.create({
+      recipient_id: admin._id,
+      recipient_role: admin.role,
+      issue_id: null,
+      message: `Welcome to DSIMS! Your ${role.replace(/_/g, ' ')} account has been created. You can now log in.`
+    });
+
+    res.status(201).json({
+      message: "Admin created successfully.",
+      admin: {
+        _id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role,
+        status: admin.status
+      }
+    });
+  } catch (error) {
+    console.error("Create admin error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
 module.exports = {
   listAllAdmins,
   getAdminDetail,
   getAdminIssues,
   getAdminFeedback,
   getAdminLeaderboard,
-  updateAdminStatus
+  updateAdminStatus,
+  createAdmin
 };
