@@ -37,7 +37,7 @@ const Topbar = () => {
   };
   
   return (
-    <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between">
+    <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between flex-shrink-0">
       <div>
         <h2 className="font-semibold text-slate-900">
           Welcome back, {user?.name?.split(' ')[0]}

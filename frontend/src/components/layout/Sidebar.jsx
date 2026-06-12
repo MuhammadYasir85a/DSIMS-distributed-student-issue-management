@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
   LayoutDashboard, FileText, Bell, User, Users, MessageSquare, 
-  Plus, Shield, UserCheck, BarChart3
+  Plus, Shield, UserCheck, BarChart3, Megaphone, Inbox, PackagePlus
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -21,6 +21,7 @@ const Sidebar = () => {
     { to: '/admin/issues', label: 'Department Issues', icon: FileText },
     { to: '/admin/pending-students', label: 'Pending Students', icon: UserCheck },
     { to: '/admin/feedback', label: 'My Feedback', icon: MessageSquare },
+    { to: '/admin/request-resources', label: 'Request Resources', icon: PackagePlus },
     { to: '/admin/notifications', label: 'Notifications', icon: Bell },
     { to: '/admin/profile', label: 'Profile', icon: User },
   ];
@@ -28,6 +29,8 @@ const Sidebar = () => {
   const managementLinks = [
     { to: '/management', label: 'Dashboard', icon: LayoutDashboard, end: true },
     { to: '/management/reports', label: 'Reports', icon: BarChart3 },
+    { to: '/management/announcements', label: 'Announcements', icon: Megaphone },
+    { to: '/management/resource-requests', label: 'Resource Requests', icon: Inbox },
     { to: '/management/notifications', label: 'Notifications', icon: Bell },
     { to: '/management/profile', label: 'Profile', icon: User },
   ];
@@ -57,8 +60,8 @@ const Sidebar = () => {
                   : 'Student';
   
   return (
-    <aside className="w-64 bg-white border-r border-slate-200 flex flex-col">
-      <div className="p-6 border-b border-slate-200">
+    <aside className="w-64 bg-white border-r border-slate-200 flex flex-col h-screen flex-shrink-0 overflow-hidden">
+      <div className="p-6 border-b border-slate-200 flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className={`w-10 h-10 bg-gradient-to-br ${roleColor} rounded-xl flex items-center justify-center`}>
             <Shield className="w-6 h-6 text-white" />
@@ -90,7 +93,7 @@ const Sidebar = () => {
         ))}
       </nav>
       
-      <div className="p-4 border-t border-slate-200">
+      <div className="p-4 border-t border-slate-200 flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className={`w-10 h-10 bg-gradient-to-br ${roleColor} rounded-full flex items-center justify-center text-white font-bold`}>
             {user?.name?.charAt(0)?.toUpperCase()}

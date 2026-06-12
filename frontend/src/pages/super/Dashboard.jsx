@@ -26,17 +26,19 @@ const SuperAdminDashboard = () => {
   const [monthlyData, setMonthlyData] = useState([]);
   const [performanceData, setPerformanceData] = useState(null);
   const [escalatedCount, setEscalatedCount] = useState(0);
+  const [activeAdminsCount, setActiveAdminsCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [statusRes, catRes, monthRes, perfRes, escalRes] = await Promise.all([
+        const [statusRes, catRes, monthRes, perfRes, escalRes, adminsRes] = await Promise.all([
           api.get('/reports/status-count'),
           api.get('/reports/category-count'),
           api.get('/reports/monthly-trend'),
           api.get('/feedback/admin-performance?days=90'),
-          api.get('/feedback/escalated?unreviewed=true&limit=1')
+          api.get('/feedback/escalated?unreviewed=true&limit=1'),
+          api.get('/admins?status=active&limit=1&page=1')
         ]);
         
         setStatusData(statusRes.data.map(s => ({ 
@@ -57,6 +59,13 @@ const SuperAdminDashboard = () => {
         
         setPerformanceData(perfRes.data);
         setEscalatedCount(escalRes.data.unreviewed_count || 0);
+
+        // Get total active admins count from the same endpoint Manage Admins uses
+        const total = adminsRes.data.total 
+                   || adminsRes.data.totalCount 
+                   || (adminsRes.data.totalPages ? adminsRes.data.totalPages * 10 : 0)
+                   || (adminsRes.data.admins ? adminsRes.data.admins.length : 0);
+        setActiveAdminsCount(total);
       } catch (err) {
         console.error('Dashboard error:', err);
       } finally {
@@ -96,7 +105,7 @@ const SuperAdminDashboard = () => {
         <div className="card p-5 bg-gradient-to-br from-amber-500 to-amber-700 text-white border-0">
           <Users className="w-6 h-6 mb-2 opacity-80" />
           <p className="text-xs font-medium uppercase opacity-90">Active Admins</p>
-          <p className="text-3xl font-bold mt-1">{performanceData?.total_admins_with_feedback || 0}</p>
+          <p className="text-3xl font-bold mt-1">{activeAdminsCount}</p>
         </div>
 
         <div className="card p-5 bg-gradient-to-br from-rose-500 to-rose-700 text-white border-0">

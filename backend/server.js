@@ -61,6 +61,7 @@ app.use("/notifications", require("./routes/notification.routes"));   // ✅ NEW
 app.use("/categories", require("./routes/category.routes"));          // ✅ NEW
 app.use("/feedback", require("./routes/feedback.routes"));                // ✅ ADD
 app.use("/admins", require("./routes/admin_management.routes"));          // ✅ ADD
+app.use("/management", require("./routes/management.routes"));
 
 // ============================
 // 404 Handler

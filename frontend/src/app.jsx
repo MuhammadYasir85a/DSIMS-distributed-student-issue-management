@@ -20,6 +20,7 @@ import AdminIssues from './pages/admin/Issues';
 import AdminIssueDetail from './pages/admin/IssueDetail';
 import AdminFeedback from './pages/admin/Feedback';
 import PendingStudents from './pages/admin/PendingStudents';
+import RequestResources from './pages/admin/RequestResources';
 
 // Super admin pages
 import SuperAdminDashboard from './pages/super/Dashboard';
@@ -32,6 +33,8 @@ import CreateAdmin from './pages/super/CreateAdmin';
 // Management pages
 import ManagementDashboard from './pages/management/Dashboard';
 import Reports from './pages/management/Reports';
+import Announcements from './pages/management/Announcements';
+import ResourceRequests from './pages/management/ResourceRequests';
 
 // Shared pages
 import Profile from './pages/Profile';
@@ -95,6 +98,7 @@ function App() {
             <Route path="issues/:id" element={<AdminIssueDetail />} />
             <Route path="pending-students" element={<PendingStudents />} />
             <Route path="feedback" element={<AdminFeedback />} />
+            <Route path="request-resources" element={<RequestResources />} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="profile" element={<Profile />} />
           </Route>
@@ -103,6 +107,8 @@ function App() {
           <Route path="/management" element={<ProtectedRoute roles={['management']}><DashboardLayout /></ProtectedRoute>}>
             <Route index element={<ManagementDashboard />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="announcements" element={<Announcements />} />
+            <Route path="resource-requests" element={<ResourceRequests />} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="profile" element={<Profile />} />
           </Route>
