@@ -24,7 +24,7 @@ const registerStudent = async (req, res) => {
       return res.status(400).json({ message: "All fields are required." });
     }
 
-    const studentEmailRegex = /^[a-z]{4}\d{2}[abcd]\d{3,6}@namal\.edu\.pk$/;
+    const studentEmailRegex = /^[a-z]{4}\d{2}[abcdef]\d{3,6}@namal\.edu\.pk$/;
     if (!studentEmailRegex.test(email)) {
       return res.status(400).json({
         message: "Invalid student email format. Example: bscs23a123@namal.edu.pk"
