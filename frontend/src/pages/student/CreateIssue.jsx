@@ -20,21 +20,32 @@ const CreateIssue = () => {
   });
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [catRes, deptRes] = await Promise.all([
-          api.get('/categories'),
-          api.get('/departments?campus_id=' + JSON.parse(localStorage.getItem('dsims_user'))?.campus_id?._id ||
-                  JSON.parse(localStorage.getItem('dsims_user'))?.campus_id || '')
-        ]);
-        setCategories(catRes.data);
-        setDepartments(deptRes.data);
-      } catch (err) {
-        console.error('Error loading form data:', err);
+  const fetchData = async () => {
+    try {
+      // ✅ Properly extract campus_id from user object
+      const user = JSON.parse(localStorage.getItem('dsims_user'));
+      const campusId = user?.campus?._id || user?.campus || user?.campus_id?._id || user?.campus_id || '';
+
+      if (!campusId) {
+        console.error('No campus_id found in user data');
+        toast.error('User campus info missing. Please re-login.');
+        return;
       }
-    };
-    fetchData();
-  }, []);
+
+      const [catRes, deptRes] = await Promise.all([
+        api.get('/categories'),
+        api.get(`/departments?campus_id=${campusId}`)
+      ]);
+
+      setCategories(catRes.data);
+      setDepartments(deptRes.data);
+    } catch (err) {
+      console.error('Error loading form data:', err);
+      toast.error('Failed to load form data');
+    }
+  };
+  fetchData();
+}, []);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
