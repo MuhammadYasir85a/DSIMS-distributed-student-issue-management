@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build and Deploy Job
     env:
-      VITE_API_URL: https://dsims-backend-yasir-e4bbgkggesdxdkff.southeastasia-01.azurewebsites.net/
+      VITE_API_URL: https://dsims-backend-yasir-e4bbgkggesdxdkff.southeastasia-01.azurewebsites.net
     steps:
       - uses: actions/checkout@v3
         with:
